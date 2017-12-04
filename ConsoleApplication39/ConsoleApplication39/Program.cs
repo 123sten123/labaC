@@ -20,6 +20,13 @@ namespace ConsoleApplication39
             Console.ReadKey();
         }
 
+        //todo: переведите ваш код на использвание этолго интерфейса, реализукйте его двумя классами - Json, Xml
+        interface ISerializer
+        {
+            string Serializer<T>(T obj);
+            T Deserializer<T>(string src);
+        }
+
         private void JsonXml(String Type, String serialObject,Input newInput,Output newOutput)
         {
             if (Type == "json")
