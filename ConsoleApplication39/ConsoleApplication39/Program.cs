@@ -4,11 +4,83 @@ using System.IO;
 using System.Xml.Serialization;
 using System.Text;
 using Newtonsoft.Json;
+using System.Xml;
+using System.Collections.Concurrent;
 
 namespace ConsoleApplication39
 {
 
-    public class JsonXmlStart
+    interface ISerializer
+         {
+             string Serializer<T>(T obj);
+             T Deserializer<T>(string src);
+         }
+
+
+    class Json : ISerializer
+    {
+        public string Serializer<T>(T obj)
+        {
+         
+          return JsonConvert.SerializeObject(obj);
+        }
+
+        public T Deserializer<T>(string src)
+        {
+           
+           return JsonConvert.DeserializeObject<T>(src);
+
+        }
+   }
+
+
+    class Xml : ISerializer
+    {
+
+        private readonly XmlWriterSettings xmlWriterSettings = new XmlWriterSettings()
+        {
+            OmitXmlDeclaration = true,
+            Encoding = new UTF8Encoding(false),
+            Indent = true,
+        };
+        private readonly ConcurrentDictionary<Type, System.Xml.Serialization.XmlSerializer> serializers =
+            new ConcurrentDictionary<Type, System.Xml.Serialization.XmlSerializer>();
+        private readonly XmlSerializerNamespaces xmlSerializerNamespaces = new XmlSerializerNamespaces();
+        public Xml()
+        {
+            xmlSerializerNamespaces.Add("", "");
+        }
+        public System.Xml.Serialization.XmlSerializer GetSerializer<T>()
+        {
+            return serializers.GetOrAdd(typeof(T),
+                type => new System.Xml.Serialization.XmlSerializer(type, new XmlAttributeOverrides()));
+        }
+
+        public T Deserializer<T>(string src)
+        {
+            var xml = new System.Xml.Serialization.XmlSerializer(typeof(T));
+            var byteArray = Encoding.UTF8.GetBytes(src);
+
+            using (var memoryStream = new MemoryStream(byteArray))
+            {
+                return (T)xml.Deserialize(memoryStream);
+            }
+        }
+
+        public string Serializer<T>(T obj)
+        {
+            using (var memoryStream = new MemoryStream())
+            {
+                GetSerializer<T>().Serialize(XmlWriter.Create(memoryStream, xmlWriterSettings),
+                    obj, xmlSerializerNamespaces);
+
+                var bytes = memoryStream.ToArray();
+                return Encoding.UTF8.GetString(bytes);
+            }
+        }
+    }
+
+public class JsonXmlStart
     {
       
         public JsonXmlStart(String serialType, String serialObject)
@@ -24,40 +96,22 @@ namespace ConsoleApplication39
         {
             if (Type == "json")
             {
-                newInput = JsonConvert.DeserializeObject<Input>(serialObject);
+                ISerializer serializer = new Json();
+                newInput = serializer.Deserializer<Input>(serialObject);
                 newOutput = CreateOutput(newInput);
+                Console.WriteLine(serializer.Serializer(newOutput).Replace(Environment.NewLine, "").Replace(" ", ""));
 
-                var outputString = JsonConvert.SerializeObject(newOutput);
-                Console.WriteLine(outputString.Replace(Environment.NewLine, "").Replace(" ", ""));
             }
             else if (Type == "xml")
             {
-                XmlSerializer formatter = new XmlSerializer(typeof(Input));
-
-                using (var reader = new StringReader(serialObject))
-                {
-                    newInput = (Input)formatter.Deserialize(reader);
-                }
-
+                ISerializer serializer = new Xml();
+                newInput = serializer.Deserializer<Input>(serialObject);
                 newOutput = CreateOutput(newInput);
-
-                formatter = new XmlSerializer(typeof(Output));
-                using (var stream = new MemoryStream())
-                {
-                    formatter.Serialize(stream, newOutput);
-
-                    var outputString = Encoding.UTF8.GetString(stream.ToArray());
-                    outputString = outputString.Remove(0, outputString.IndexOf('>') + 1);
-                    outputString = outputString.Remove(outputString.IndexOf(' '), outputString.IndexOf('>', outputString.IndexOf(' ')) - outputString.IndexOf(' '))
-                    .Replace(Environment.NewLine, string.Empty)
-                    .Replace(" ", string.Empty);
-
-                    Console.WriteLine(outputString);
-                }
+                Console.WriteLine(serializer.Serializer(newOutput).Replace(Environment.NewLine, "").Replace(" ", ""));
             }
         }
 
-        static private Output CreateOutput(Input input)
+        static public Output CreateOutput(Input input)
         {
             var output = new Output();
             output.SumResult = input.Sums.Sum() * input.K;
